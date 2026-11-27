@@ -1,0 +1,31 @@
+# Python >= 3.12 (tarfile filter="data"). Cài trong VM phân tích.
+
+# LLM local: gọi Ollama qua HTTP API bằng requests (agent/llm.py), không cần thư viện ollama
+
+# Công cụ phân tích tĩnh (semgrep không chạy native trên Windows, dùng VM Linux)
+guarddog>=2.0
+semgrep>=1.90
+
+# Tra cứu hash (VirusTotal chỉ tra SHA-256, MalwareBazaar, OSV)
+requests>=2.32
+
+# Fuzzy hash
+ppdeep>=20200505        # ssdeep thuần Python, khỏi build libfuzzy
+py-tlsh>=4.7
+
+# Typosquat
+rapidfuzz>=3.9
+
+# Học máy
+scikit-learn>=1.5
+joblib>=1.4
+
+# YARA
+yara-python>=4.5
+
+# Cấu hình
+pyyaml>=6.0
+python-dotenv>=1.0
+
+# Test
+pytest>=8.0

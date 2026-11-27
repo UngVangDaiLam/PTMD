@@ -1,0 +1,184 @@
+# Rule Semgrep tự viết cho gói PyPI độc (CMP198). metadata.attack / behavior được
+# semgrep_scan đưa lại cho agent làm gợi ý ATT&CK và loại hành vi.
+rules:
+  - id: cmp198-install-hook-network
+    languages: [python]
+    severity: ERROR
+    message: Lớp lệnh cài đặt tuỳ biến (cmdclass) gọi mạng khi cài gói
+    metadata:
+      attack: [T1195.002, T1105]
+      behavior: downloader_dropper
+    patterns:
+      - pattern-inside: |
+          class $C(..., $BASE, ...):
+            ...
+      - metavariable-regex:
+          metavariable: $BASE
+          regex: (^|\.)(install|develop|egg_info|build_py|build_ext|build|sdist|bdist_egg|bdist_wheel)$
+      - pattern-either:
+          - pattern: requests.$M(...)
+          - pattern: urllib.request.urlopen(...)
+          - pattern: urllib.request.urlretrieve(...)
+          - pattern: urlopen(...)
+          - pattern: urlretrieve(...)
+          - pattern: socket.socket(...)
+          - pattern: socket.create_connection(...)
+          - pattern: http.client.HTTPSConnection(...)
+          - pattern: http.client.HTTPConnection(...)
+
+  - id: cmp198-install-hook-exec
+    languages: [python]
+    severity: ERROR
+    message: Lớp lệnh cài đặt tuỳ biến (cmdclass) chạy lệnh hệ thống hoặc exec khi cài gói
+    metadata:
+      attack: [T1195.002, T1059.006]
+      behavior: other
+    patterns:
+      - pattern-inside: |
+          class $C(..., $BASE, ...):
+            ...
+      - metavariable-regex:
+          metavariable: $BASE
+          regex: (^|\.)(install|develop|egg_info|build_py|build_ext|build|sdist|bdist_egg|bdist_wheel)$
+      - pattern-either:
+          - pattern: subprocess.$F(...)
+          - pattern: os.system(...)
+          - pattern: os.popen(...)
+          - pattern: os.startfile(...)
+          - pattern: exec(...)
+          - pattern: eval(...)
+
+  - id: cmp198-exec-decoded
+    languages: [python]
+    severity: ERROR
+    message: exec/eval trên dữ liệu vừa giải mã (base64/zlib/marshal/hex) - kỹ thuật làm rối mã
+    metadata:
+      attack: [T1027, T1059.006]
+      behavior: other
+    pattern-either:
+      - pattern: exec(base64.$D(...), ...)
+      - pattern: eval(base64.$D(...), ...)
+      - pattern: exec(base64.$D(...).decode(...), ...)
+      - pattern: exec(zlib.decompress(...), ...)
+      - pattern: exec(zlib.decompress(...).decode(...), ...)
+      - pattern: exec(marshal.loads(...), ...)
+      - pattern: exec(codecs.decode(...), ...)
+      - pattern: exec(bytes.fromhex(...).decode(...), ...)
+      - pattern: exec(__import__($M).$D(...), ...)
+      - pattern: exec(compile(base64.$D(...), ...), ...)
+      - patterns:
+          - pattern: exec($X, ...)
+          - pattern-inside: |
+              $X = base64.$D(...)
+              ...
+      - patterns:
+          - pattern: exec($X, ...)
+          - pattern-inside: |
+              $X = zlib.decompress(...)
+              ...
+
+  - id: cmp198-env-exfil
+    languages: [python]
+    severity: ERROR
+    mode: taint
+    message: Biến môi trường (có thể chứa token, credential) chảy vào lời gọi mạng
+    metadata:
+      attack: [T1552.001, T1041]
+      behavior: stealer
+    pattern-sources:
+      - pattern: os.environ
+      - pattern: os.environ.get(...)
+      - pattern: os.getenv(...)
+      - pattern: os.environ[...]
+    pattern-sinks:
+      - pattern: requests.$M(...)
+      - pattern: urllib.request.urlopen(...)
+      - pattern: urllib.request.Request(...)
+      - pattern: $S.send(...)
+      - pattern: $S.sendall(...)
+      - pattern: http.client.HTTPSConnection(...).request(...)
+
+  - id: cmp198-host-info-exfil
+    languages: [python]
+    severity: WARNING
+    mode: taint
+    message: Thông tin máy (hostname, user, IP) chảy vào lời gọi mạng - dấu hiệu beacon dependency confusion
+    metadata:
+      attack: [T1082, T1041]
+      behavior: dependency_confusion_beacon
+    pattern-sources:
+      - pattern: socket.gethostname()
+      - pattern: platform.node()
+      - pattern: getpass.getuser()
+      - pattern: os.getlogin()
+      - pattern: os.getcwd()
+      - pattern: os.uname()
+    pattern-sinks:
+      - pattern: requests.$M(...)
+      - pattern: urllib.request.urlopen(...)
+      - pattern: urllib.request.Request(...)
+      - pattern: socket.gethostbyname(...)
+      - pattern: $S.send(...)
+      - pattern: $S.sendto(...)
+
+  - id: cmp198-download-exec
+    languages: [python]
+    severity: ERROR
+    mode: taint
+    message: Dữ liệu tải từ mạng bị ghi ra đĩa hoặc thực thi - downloader/dropper
+    metadata:
+      attack: [T1105, T1059.006]
+      behavior: downloader_dropper
+    pattern-sources:
+      - pattern: requests.get(...)
+      - pattern: requests.post(...)
+      - pattern: urllib.request.urlopen(...)
+      - pattern: urlopen(...)
+    pattern-sinks:
+      - pattern: exec(...)
+      - pattern: eval(...)
+      - pattern: $F.write(...)
+      - pattern: subprocess.$R(...)
+      - pattern: os.system(...)
+
+  - id: cmp198-webhook-url
+    languages: [python]
+    severity: ERROR
+    message: Có webhook Discord / bot Telegram - kênh gửi dữ liệu đánh cắp hay gặp
+    metadata:
+      attack: [T1567]
+      behavior: stealer
+    pattern-regex: (discord(app)?\.com/api/webhooks/\d+/[\w-]+|api\.telegram\.org/bot\d+:[\w-]+)
+
+  - id: cmp198-credential-paths
+    languages: [python]
+    severity: WARNING
+    message: Tham chiếu đường dẫn lưu credential (SSH key, AWS, trình duyệt, Discord, ví tiền mã hoá)
+    metadata:
+      attack: [T1552.001, T1555.003]
+      behavior: stealer
+    pattern-regex: (?i)(\.ssh[\\/]+id_(rsa|ed25519)|\.aws[\\/]+credentials|Local Storage[\\/]+leveldb|Login Data|\\Cookies|Local State|discord(canary|ptb)?[\\/]+Local Storage|Exodus[\\/]+exodus\.wallet|wallet\.dat|\.git-credentials|\.pypirc|\.npmrc)
+
+  - id: cmp198-long-base64-blob
+    languages: [python]
+    severity: WARNING
+    message: Chuỗi base64 rất dài trong mã nguồn - nghi payload bị nhúng/làm rối
+    metadata:
+      attack: [T1027]
+      behavior: other
+    pattern-regex: '["''][A-Za-z0-9+/]{400,}={0,2}["'']'
+
+  - id: cmp198-setup-shell
+    languages: [python]
+    severity: WARNING
+    message: setup.py chạy lệnh hệ thống
+    metadata:
+      attack: [T1195.002, T1059]
+      behavior: other
+    paths:
+      include: ["**/setup.py"]
+    pattern-either:
+      - pattern: subprocess.$F(...)
+      - pattern: os.system(...)
+      - pattern: os.popen(...)
+      - pattern: os.startfile(...)

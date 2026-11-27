@@ -1,0 +1,54 @@
+# Cấu hình agent. API key KHÔNG đặt ở đây, đọc từ biến môi trường (.env).
+
+llm:
+  provider: ollama
+  host: http://127.0.0.1:11434   # ghi đè bằng OLLAMA_HOST
+  model: qwen2.5:7b              # máy yếu: qwen2.5:3b
+  temperature: 0
+  format: json
+  num_ctx: 8192
+
+agent:
+  max_steps: 12
+  observation_max_chars: 2000    # rút gọn output tool trước khi đưa lại cho SLM
+  observation_max_lines: 40
+  prompt_injection_guard: true   # bọc dữ liệu mẫu trong <data>...</data>
+
+extract:
+  temp_root: null                # null = thư mục tạm hệ thống
+  max_total_bytes: 209715200     # 200 MB sau giải nén
+  max_file_bytes: 52428800       # 50 MB mỗi file
+  max_files: 5000
+  max_ratio: 100                 # tỉ lệ nén tối đa của một entry
+  sample_zip_password: null      # mật khẩu zip của bộ mẫu, vd. "infected" (DataDog); null = không giải entry mã hoá
+
+tools:
+  guarddog:
+    timeout_s: 300
+  semgrep:
+    config: [rules/semgrep]      # chỉ rule local, --metrics=off
+    timeout_s: 300
+  read_file:
+    max_lines: 200
+  hash_lookup:
+    cache_dir: .cache/hash_lookup
+    cache_ttl_days: 7
+    virustotal_rpm: 4            # giới hạn VT free
+    offline: false               # true = chỉ dùng cache, không gọi mạng
+  fuzzy:
+    index: data/fuzzy_index.json # dựng bằng: python -m tools.fuzzy build
+  ml_classify:
+    model_path: ml/model.joblib  # huấn luyện bằng: python -m ml.train
+  yara:
+    malicious_dir: data/malicious
+    benign_dir: data/benign
+
+paths:
+  data: data
+  ground_truth: data/ground_truth
+  logs: logs
+  reports: reports
+  top_packages: data/top_pypi_packages.txt
+
+eval:
+  runs: 3
